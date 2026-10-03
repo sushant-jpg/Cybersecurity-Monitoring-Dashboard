@@ -1,0 +1,441 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  SECURITY_ANALYST
+  IT_ADMIN
+  VIEWER
+}
+
+enum Severity {
+  LOW
+  INFORMATIONAL
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  INVESTIGATING
+  CONTAINED
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+enum IncidentStatus {
+  NEW
+  INVESTIGATING
+  CONTAINMENT
+  ERADICATION
+  RECOVERY
+  CLOSED
+}
+
+enum InvestigationStatus {
+  NEW
+  TRIAGED
+  INVESTIGATING
+  BENIGN
+  ESCALATED
+  CLOSED
+}
+
+enum TokenPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model Organization {
+  id                 String                      @id @default(cuid())
+  name               String
+  slug               String                      @unique
+  eventRetentionDays Int                         @default(90)
+  auditRetentionDays Int                         @default(365)
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  users              User[]
+  applications       Application[]
+  events             SecurityEvent[]
+  alerts             SecurityAlert[]
+  rules              DetectionRule[]
+  incidents          Incident[]
+  notifications      SecurityNotification[]
+  auditLogs          AuditLog[]
+  knownDevices       KnownDevice[]
+  loginHistory       LoginHistory[]
+  ipReputations      IpReputation[]
+  threatResults      ThreatIntelligenceResult[]
+}
+
+model User {
+  id                 String                  @id @default(cuid())
+  organizationId     String
+  organization       Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email              String
+  name               String
+  passwordHash       String
+  role               UserRole                @default(VIEWER)
+  emailVerifiedAt    DateTime?
+  failedLoginCount   Int                     @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  sessions           Session[]
+  assignedAlerts     SecurityAlert[]         @relation("AlertAssignee")
+  assignedIncidents  Incident[]              @relation("IncidentAssignee")
+  notes              InvestigationNote[]
+  notifications      SecurityNotification[]
+  auditLogs          AuditLog[]               @relation("AuditActor")
+  authTokens         AuthToken[]
+  @@unique([organizationId, email])
+  @@index([organizationId, role])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  description String
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  role         UserRole
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  @@id([role, permissionId])
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash        String   @unique
+  familyId         String
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime @default(now())
+  lastActivityAt   DateTime @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  reuseDetectedAt  DateTime?
+  replacedByHash   String?
+  @@index([userId, revokedAt])
+  @@index([familyId])
+}
+
+model AuthToken {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String       @unique
+  purpose   TokenPurpose
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime     @default(now())
+  @@index([userId, purpose])
+}
+
+model Application {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  environment    String
+  type           String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  apiKeys        ApiKey[]
+  events         SecurityEvent[]
+  @@index([organizationId])
+}
+
+model ApiKey {
+  id            String       @id @default(cuid())
+  applicationId String
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  name          String
+  prefix        String
+  keyHash       String       @unique
+  createdAt     DateTime     @default(now())
+  lastUsedAt    DateTime?
+  expiresAt     DateTime?
+  revokedAt     DateTime?
+  @@index([applicationId, revokedAt])
+  @@index([prefix])
+}
+
+model SecurityEvent {
+  id                  String                  @id @default(cuid())
+  organizationId      String
+  organization        Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  applicationId       String
+  application         Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  eventType           String
+  category            String
+  severity            Severity
+  riskScore           Int
+  source              String
+  timestamp           DateTime
+  userId              String?
+  username            String?
+  ipAddress           String?
+  userAgent           String?
+  country             String?
+  city                String?
+  latitude            Float?
+  longitude           Float?
+  deviceFingerprint   String?
+  metadata            Json
+  detectionRule       String?
+  investigationStatus InvestigationStatus     @default(NEW)
+  correlationId       String
+  requestId           String
+  createdAt           DateTime                @default(now())
+  alertLinks          AlertEvent[]
+  incidentLinks       IncidentEvent[]
+  riskBreakdown       RiskScore?
+  threatResults       ThreatIntelligenceResult[]
+  @@unique([organizationId, applicationId, correlationId])
+  @@index([organizationId, timestamp(sort: Desc)])
+  @@index([organizationId, eventType])
+  @@index([organizationId, ipAddress])
+  @@index([organizationId, userId])
+  @@index([applicationId, timestamp])
+  @@index([riskScore])
+}
+
+model RiskScore {
+  id        String        @id @default(cuid())
+  eventId   String        @unique
+  event     SecurityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  score     Int
+  factors   Json
+  createdAt DateTime      @default(now())
+}
+
+model SecurityAlert {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  title              String
+  description        String
+  severity           Severity
+  riskScore          Int
+  source             String
+  affectedUser       String?
+  ipAddress          String?
+  detectionRule      String
+  status             AlertStatus         @default(OPEN)
+  assignedAnalystId  String?
+  assignedAnalyst    User?               @relation("AlertAssignee", fields: [assignedAnalystId], references: [id], onDelete: SetNull)
+  requestId          String
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  events             AlertEvent[]
+  notes              InvestigationNote[]
+  incidentLinks      IncidentAlert[]
+  @@index([organizationId, status, createdAt(sort: Desc)])
+  @@index([organizationId, severity])
+}
+
+model AlertEvent {
+  alertId String
+  eventId String
+  alert   SecurityAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  event   SecurityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  @@id([alertId, eventId])
+}
+
+model DetectionRule {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  key            String
+  name           String
+  description    String
+  enabled        Boolean      @default(true)
+  threshold      Int
+  timeWindowSec  Int
+  severity       Severity
+  baseRiskScore  Int
+  configuration  Json         @default("{}")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  @@unique([organizationId, key])
+  @@index([organizationId, enabled])
+}
+
+model Incident {
+  id                String              @id @default(cuid())
+  organizationId    String
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  title             String
+  description       String
+  severity          Severity
+  status            IncidentStatus      @default(NEW)
+  assignedAnalystId String?
+  assignedAnalyst   User?               @relation("IncidentAssignee", fields: [assignedAnalystId], references: [id], onDelete: SetNull)
+  linkedUsers       String[]
+  linkedIpAddresses String[]
+  remediation       Json                @default("[]")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  alerts            IncidentAlert[]
+  events            IncidentEvent[]
+  notes             InvestigationNote[]
+  timeline          IncidentTimeline[]
+  @@index([organizationId, status, createdAt(sort: Desc)])
+}
+
+model IncidentAlert {
+  incidentId String
+  alertId    String
+  incident   Incident      @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  alert      SecurityAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  @@id([incidentId, alertId])
+}
+
+model IncidentEvent {
+  incidentId String
+  eventId    String
+  incident   Incident      @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  event      SecurityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  @@id([incidentId, eventId])
+}
+
+model IncidentTimeline {
+  id         String   @id @default(cuid())
+  incidentId String
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  action     String
+  actorId    String?
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  @@index([incidentId, createdAt])
+}
+
+model InvestigationNote {
+  id         String         @id @default(cuid())
+  authorId   String
+  author     User           @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  alertId    String?
+  alert      SecurityAlert? @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  incidentId String?
+  incident   Incident?      @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  content    String
+  createdAt  DateTime       @default(now())
+  @@index([alertId, createdAt])
+  @@index([incidentId, createdAt])
+}
+
+model SecurityNotification {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String
+  title          String
+  message        String
+  resourceType   String?
+  resourceId     String?
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+  @@index([organizationId, userId, readAt, createdAt(sort: Desc)])
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorId        String?
+  actor          User?        @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorRole      String?
+  action         String
+  targetType     String
+  targetId       String?
+  ipAddress      String?
+  userAgent      String?
+  requestId      String
+  metadata       Json         @default("{}")
+  timestamp      DateTime     @default(now())
+  @@index([organizationId, timestamp(sort: Desc)])
+  @@index([organizationId, action])
+  @@index([requestId])
+}
+
+model KnownDevice {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userKey        String
+  fingerprint    String
+  userAgent      String?
+  firstSeenAt    DateTime     @default(now())
+  lastSeenAt     DateTime     @default(now())
+  @@unique([organizationId, userKey, fingerprint])
+  @@index([organizationId, userKey])
+}
+
+model LoginHistory {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userKey        String
+  success        Boolean
+  ipAddress      String?
+  country        String?
+  city           String?
+  latitude       Float?
+  longitude      Float?
+  fingerprint    String?
+  timestamp      DateTime
+  @@index([organizationId, userKey, timestamp(sort: Desc)])
+  @@index([organizationId, ipAddress, timestamp(sort: Desc)])
+}
+
+model IpReputation {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ipAddress      String
+  provider       String
+  isDemo         Boolean      @default(true)
+  reputation     String
+  confidence     Int
+  country        String?
+  city           String?
+  asn            String?
+  isp            String?
+  raw            Json
+  checkedAt      DateTime     @default(now())
+  expiresAt      DateTime
+  @@unique([organizationId, ipAddress, provider])
+  @@index([organizationId, ipAddress])
+}
+
+model ThreatIntelligenceResult {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  eventId        String?
+  event          SecurityEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  indicatorType  String
+  indicator      String
+  provider       String
+  isDemo         Boolean
+  verdict        String
+  confidence     Int
+  details        Json
+  createdAt      DateTime       @default(now())
+  @@index([organizationId, indicator, createdAt(sort: Desc)])
+}

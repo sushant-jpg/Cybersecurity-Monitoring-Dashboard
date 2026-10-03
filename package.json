@@ -1,0 +1,31 @@
+{
+  "name": "securewatch",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,cyan \"npm run dev -w @securewatch/api\" \"npm run dev -w @securewatch/web\"",
+    "build": "npm run build -w @securewatch/shared && npm run build -w @securewatch/api && npm run build -w @securewatch/web",
+    "typecheck": "npm run build -w @securewatch/shared && npm run typecheck -w @securewatch/api && npm run typecheck -w @securewatch/web",
+    "lint": "npm run build -w @securewatch/shared && npm run lint -w @securewatch/api && npm run lint -w @securewatch/web",
+    "test": "npm run build -w @securewatch/shared && npm run test -w @securewatch/api && npm run test -w @securewatch/web",
+    "test:coverage": "npm run test:coverage -w @securewatch/api",
+    "db:generate": "npm run prisma:generate -w @securewatch/api",
+    "db:migrate": "npm run prisma:migrate -w @securewatch/api",
+    "db:seed": "npm run prisma:seed -w @securewatch/api",
+    "demo": "npm run simulate -w @securewatch/api",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/express": "4.17.25",
+    "concurrently": "^9.1.2",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2"
+  },
+  "overrides": {
+    "@types/express": "4.17.25",
+    "@types/express-serve-static-core": "4.19.9",
+    "braces": "3.0.4"
+  },
+  "engines": { "node": ">=20.0.0" }
+}

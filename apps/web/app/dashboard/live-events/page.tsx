@@ -1,0 +1,27 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { io, type Socket } from "socket.io-client";
+import { Download, Filter, Pause, Play, Radio, Search } from "lucide-react";
+import type { Severity } from "@securewatch/shared";
+import { API_URL, api, getAccessToken } from "@/lib/api";
+import { formatDate } from "@/lib/utils";
+import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { SeverityBadge } from "@/components/severity-badge";
+import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+
+interface SecurityEvent { id: string; timestamp: string; eventType: string; severity: Severity; riskScore: number; source: string; ipAddress?: string; username?: string; category: string; application: { name: string } }
+
+export default function LiveEventsPage() {
+  const [events,setEvents]=useState<SecurityEvent[]>([]); const [paused,setPaused]=useState(false); const [buffer,setBuffer]=useState<SecurityEvent[]>([]);
+  const [search,setSearch]=useState(""); const [severity,setSeverity]=useState(""); const [loading,setLoading]=useState(true); const [error,setError]=useState("");
+  const load=useCallback(async()=>{setLoading(true);setError("");try{const data=await api<{items:SecurityEvent[]}>("/api/v1/events?limit=100");setEvents(data.items);}catch(e){setError(e instanceof Error?e.message:"Unable to load events");}finally{setLoading(false);}},[]);
+  useEffect(()=>{const initial=setTimeout(()=>void load(),0);const socket:Socket=io(API_URL,{auth:{token:getAccessToken()}});socket.on("event.created",(event:SecurityEvent)=>{if(paused)setBuffer((items)=>[event,...items]);else setEvents((items)=>[event,...items].slice(0,200));});return()=>{clearTimeout(initial);socket.disconnect();};},[load,paused]);
+  const resume=()=>{setEvents((items)=>[...buffer,...items].slice(0,200));setBuffer([]);setPaused(false);};
+  const filtered=useMemo(()=>events.filter((event)=>(!severity||event.severity===severity)&&(!search||[event.eventType,event.ipAddress,event.username,event.id].some((value)=>value?.toLowerCase().includes(search.toLowerCase())))),[events,severity,search]);
+  return <><PageHeader eyebrow="Telemetry" title="Live security events" description="Streaming, normalized activity from every monitored application." action={<div className="flex gap-2"><Button variant="outline" onClick={()=>paused?resume():setPaused(true)}>{paused?<><Play className="h-4 w-4"/>Resume {buffer.length?`(${buffer.length})`:""}</>:<><Pause className="h-4 w-4"/>Pause feed</>}</Button><Button variant="outline" asChild><a href={`${API_URL}/api/v1/events/export`}><Download className="h-4 w-4"/>CSV</a></Button></div>}/>
+    <div className="panel mb-4 flex flex-col gap-3 p-4 md:flex-row"><div className="relative flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-600"/><input className="h-10 w-full rounded-lg border border-white/[.08] bg-black/10 pl-10 pr-3 text-sm outline-none focus:border-cyan-400/50" placeholder="Search IP, user, event ID, or event type" value={search} onChange={(e)=>setSearch(e.target.value)}/></div><div className="relative"><Filter className="absolute left-3 top-3 h-4 w-4 text-slate-600"/><select className="h-10 min-w-44 appearance-none rounded-lg border border-white/[.08] bg-[#0f1724] pl-10 pr-8 text-sm outline-none" value={severity} onChange={(e)=>setSeverity(e.target.value)}><option value="">All severities</option>{["CRITICAL","HIGH","MEDIUM","INFORMATIONAL","LOW"].map((value)=><option key={value}>{value}</option>)}</select></div><div className="flex items-center gap-2 rounded-lg border border-emerald-400/10 bg-emerald-400/[.04] px-3 text-xs text-emerald-300"><Radio className="h-3.5 w-3.5 animate-pulse"/>Receiving</div></div>
+    {loading?<LoadingState/>:error?<ErrorState message={error} retry={load}/>:filtered.length===0?<EmptyState title="No security events detected" description="Your monitored applications are currently reporting no activity that matches these filters."/>:<div className="panel overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[950px] text-left"><thead className="border-b border-white/[.06] bg-white/[.018] text-[10px] uppercase tracking-wider text-slate-500"><tr>{["Detected","Severity","Event","Source / application","Identity","IP address","Risk"].map((h)=><th key={h} className="px-4 py-3 font-semibold">{h}</th>)}</tr></thead><tbody className="divide-y divide-white/[.05]">{filtered.map((event)=><tr key={event.id} className="transition hover:bg-white/[.018]"><td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-slate-500">{formatDate(event.timestamp)}</td><td className="px-4 py-3"><SeverityBadge severity={event.severity}/></td><td className="px-4 py-3"><p className="text-xs font-medium">{event.eventType.replaceAll("_"," ")}</p><p className="mt-1 text-[10px] text-slate-600">{event.category}</p></td><td className="px-4 py-3 text-xs text-slate-400"><p>{event.source}</p><p className="mt-1 text-[10px] text-slate-600">{event.application.name}</p></td><td className="px-4 py-3 text-xs text-slate-400">{event.username??"—"}</td><td className="px-4 py-3 font-mono text-xs text-slate-400">{event.ipAddress??"—"}</td><td className="px-4 py-3"><span className="font-mono text-sm font-semibold">{event.riskScore}</span><span className="text-[10px] text-slate-600">/100</span></td></tr>)}</tbody></table></div></div>}
+  </>;
+}

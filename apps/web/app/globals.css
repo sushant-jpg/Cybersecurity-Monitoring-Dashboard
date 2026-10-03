@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 222 35% 7%;
+  --foreground: 210 40% 96%;
+  --card: 222 29% 10%;
+  --border: 216 22% 18%;
+  --muted: 215 18% 60%;
+  --primary: 184 78% 42%;
+  --danger: 0 72% 56%;
+}
+
+* { border-color: hsl(var(--border)); }
+html { color-scheme: dark; }
+body {
+  min-height: 100vh;
+  color: hsl(var(--foreground));
+  background:
+    radial-gradient(ellipse at 12% -10%, rgba(15, 157, 164, .13), transparent 33%),
+    radial-gradient(ellipse at 96% 8%, rgba(70, 84, 160, .12), transparent 27%),
+    hsl(var(--background));
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+::selection { background: rgba(39, 198, 203, .3); }
+.panel { @apply rounded-xl border border-white/[.07] bg-card/80 shadow-panel backdrop-blur-sm; }
+.subtle-grid {
+  background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.scrollbar-thin { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
